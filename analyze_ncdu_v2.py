@@ -88,7 +88,7 @@ def normalize_path(path: str) -> str:
 def main():
     # Load ncdu JSON
     print("Loading ncdu JSON file...")
-    with open("mac_mbp13_root.json", "r") as f:
+    with open("disk_usage.json", "r") as f:
         data = json.load(f)
 
     # Parse metadata
