@@ -1,0 +1,106 @@
+# Data files
+*.csv
+*.json
+*.txt
+
+# Analysis output files
+analysis_output*.txt
+analysis_output*.json
+
+# Cleanable path files
+cleanable_*.txt
+
+# Backup files
+*.backup
+*.bak
+*.orig
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+.VolumeIcon.icns
+
+# Logs
+*.log
+logs/
+*.out
+
+# Distribution / packaging
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.out
+*.log
+
+# Testing
+.pytest_cache/
+.hypothesis/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment
+.env
+.venv
+venv/
+env/
+
+# Local config
+local/
+.sass-cache/
+connect.lock
+coverage/
+lib/
+lib64/
+node_modules/
+npm-debug.log
+yarn-error.log
+.yarn-integrity
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.graphqlconfig.yml
+.eslintcache
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
