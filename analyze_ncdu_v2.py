@@ -75,11 +75,13 @@ def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
 
 
 def normalize_path(path: str) -> str:
-    """Remove System/Volumes/Data prefix to deduplicate paths."""
-    if path.startswith("//System/Volumes/Data/"):
-        return path[22:]  # Remove '//System/Volumes/Data'
-    elif path.startswith("/System/Volumes/Data/"):
-        return path[21:]
+    """Remove System/Volumes/Data prefix and extra leading slashes to deduplicate paths."""
+    # First, normalize multiple leading slashes to single slash
+    path = "/" + path.lstrip("/")
+
+    # Then remove System/Volumes/Data prefix if present
+    if path.startswith("/System/Volumes/Data/"):
+        return path[20:]  # Remove '/System/Volumes/Data'
     return path
 
 
