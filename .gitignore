@@ -27,6 +27,7 @@ ENV/
 .venv/
 env.bak/
 venv.bak/
+.ruff_cache/
 
 # IDE
 .vscode/
