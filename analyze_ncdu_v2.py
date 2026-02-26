@@ -2,11 +2,12 @@
 """
 Analyze ncdu JSON output to find large directories that can be cleaned.
 The ncdu JSON format is: [version, timestamp, metadata, tree_structure]
-
 Run with: uvx --with tqdm python analyze_ncdu_v2.py
 """
 
+import argparse
 import json
+import socket
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from collections import defaultdict
@@ -18,23 +19,18 @@ def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
     Recursively parse ncdu tree structure and extract directory/file information.
     """
     results = []
-
     if not isinstance(node, list) or len(node) == 0:
         return results
-
     # First element is the directory metadata
     metadata = node[0]
     if not isinstance(metadata, dict):
         return results
-
     name = metadata.get("name", "")
     current_path = f"{parent_path}/{name}" if parent_path else f"/{name}"
-
     # Get size information (in bytes, ncdu stores as blocks)
     asize = metadata.get("asize", 0)  # Apparent size
     dsize = metadata.get("dsize", 0)  # Disk size (actual space used)
     is_dir = len(node) > 1 or metadata.get("notreg", False)
-
     # Add current node
     results.append(
         {
@@ -46,7 +42,6 @@ def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
             "depth": current_path.count("/"),
         }
     )
-
     # Process children
     for i in range(1, len(node)):
         child = node[i]
@@ -59,7 +54,6 @@ def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
             child_path = f"{current_path}/{child_name}"
             child_asize = child.get("asize", 0)
             child_dsize = child.get("dsize", 0)
-
             results.append(
                 {
                     "path": child_path,
@@ -70,7 +64,6 @@ def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
                     "depth": child_path.count("/"),
                 }
             )
-
     return results
 
 
@@ -78,7 +71,6 @@ def normalize_path(path: str) -> str:
     """Remove System/Volumes/Data prefix and extra leading slashes to deduplicate paths."""
     # First, normalize multiple leading slashes to single slash
     path = "/" + path.lstrip("/")
-
     # Then remove System/Volumes/Data prefix if present
     if path.startswith("/System/Volumes/Data/"):
         return path[20:]  # Remove '/System/Volumes/Data'
@@ -86,9 +78,32 @@ def normalize_path(path: str) -> str:
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Analyze ncdu JSON output to find large directories."
+    )
+    parser.add_argument(
+        "--host",
+        default=socket.gethostname(),
+        help="Hostname used as the data subdirectory (default: current hostname)",
+    )
+    args = parser.parse_args()
+
+    data_dir = Path("data") / args.host
+
+    # Set up output directory
+    data_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Host: {args.host}")
+    print(f"Output directory: {data_dir}/")
+
     # Load ncdu JSON
     print("Loading ncdu JSON file...")
-    with open("disk_usage.json", "r") as f:
+    input_file = data_dir / "disk_usage.json"
+    if not input_file.exists():
+        print(
+            f"Error: {input_file} not found. Please run ncdu and save output to this file."
+        )
+        return
+    with input_file.open("r") as f:
         data = json.load(f)
 
     # Parse metadata
@@ -181,7 +196,6 @@ def main():
         ):
             total = path_sizes[root]
             root_prefix = root + "/"
-
             # Use binary search to find range of paths starting with root_prefix
             # This is much faster than checking all paths
             import bisect
@@ -190,11 +204,9 @@ def main():
             # Find where paths no longer start with root_prefix
             end_prefix = root_prefix[:-1] + chr(ord(root_prefix[-1]) + 1)
             end_idx = bisect.bisect_left(sorted_paths, end_prefix)
-
             # Sum only the paths in this range
             for path in sorted_paths[start_idx:end_idx]:
                 total += path_sizes[path]
-
             root_totals[root] = total
 
         if root_totals:
@@ -219,8 +231,11 @@ def main():
                     else:
                         print(f"    {size_mb:>8.2f} MB  {path}")
 
-                # Export all paths to a file for easy deletion
-                filename = f"cleanable_{suffix.replace('/', '_').strip('_')}_paths.txt"
+                # Export all paths to a file inside DATA_DIR
+                filename = (
+                    data_dir
+                    / f"cleanable_{suffix.replace('/', '_').strip('_')}_paths.txt"
+                )
                 with open(filename, "w") as f:
                     for path, size in sorted_roots:
                         size_gb = size / 1024 / 1024 / 1024
@@ -262,6 +277,7 @@ def main():
 
     print("\n" + "=" * 80)
     print("Analysis complete!")
+    print(f"All output files saved to: {data_dir}/")
     print("=" * 80)
 
 
