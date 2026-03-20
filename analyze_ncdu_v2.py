@@ -122,10 +122,18 @@ def main():
 
     # Normalize paths and aggregate sizes
     print("Aggregating sizes by path...")
-    path_sizes = defaultdict(int)
+    path_sizes = {}
+    all_paths = set()
+    seen_files = set()
     for entry in tqdm(entries, desc="Processing entries", unit=" entries"):
         norm_path = normalize_path(entry["path"])
-        path_sizes[norm_path] += entry["disk_size_bytes"]
+        all_paths.add(norm_path)
+        if not entry["is_directory"]:
+            # Deduplicate: same file can appear under both / and /System/Volumes/Data
+            fid = (norm_path, entry["apparent_size_bytes"], entry["disk_size_bytes"])
+            if fid not in seen_files:
+                seen_files.add(fid)
+                path_sizes[norm_path] = entry["disk_size_bytes"]
 
     print(f"After deduplication: {len(path_sizes)} unique paths")
 
@@ -155,7 +163,8 @@ def main():
     print("=" * 80)
 
     # Sort paths once for efficient lookup
-    sorted_paths = sorted(path_sizes.keys())
+    sorted_all_paths = sorted(all_paths)
+    sorted_file_paths = sorted(path_sizes.keys())
 
     # Define patterns to search for
     patterns = [
@@ -176,7 +185,7 @@ def main():
     for suffix, description in patterns:
         # Find all root directories ending with this pattern (not nested)
         matching_roots = []
-        for path in sorted_paths:
+        for path in sorted_all_paths:
             if path.endswith(suffix):
                 # Check it's not a nested occurrence (e.g., /a/node_modules/b/node_modules)
                 # by seeing if the suffix appears more than once
@@ -186,7 +195,7 @@ def main():
         if not matching_roots:
             continue
 
-        # For each root, sum it + all children using binary search range
+        # For each root, sum all descendant files using binary search range
         root_totals = {}
         for root in tqdm(
             matching_roots,
@@ -194,18 +203,17 @@ def main():
             leave=False,
             disable=len(matching_roots) < 10,
         ):
-            total = path_sizes[root]
+            total = 0
             root_prefix = root + "/"
-            # Use binary search to find range of paths starting with root_prefix
-            # This is much faster than checking all paths
+            # Use binary search to find range of file paths starting with root_prefix
             import bisect
 
-            start_idx = bisect.bisect_left(sorted_paths, root_prefix)
+            start_idx = bisect.bisect_left(sorted_file_paths, root_prefix)
             # Find where paths no longer start with root_prefix
             end_prefix = root_prefix[:-1] + chr(ord(root_prefix[-1]) + 1)
-            end_idx = bisect.bisect_left(sorted_paths, end_prefix)
-            # Sum only the paths in this range
-            for path in sorted_paths[start_idx:end_idx]:
+            end_idx = bisect.bisect_left(sorted_file_paths, end_prefix)
+            # Sum only the file paths in this range
+            for path in sorted_file_paths[start_idx:end_idx]:
                 total += path_sizes[path]
             root_totals[root] = total
 
