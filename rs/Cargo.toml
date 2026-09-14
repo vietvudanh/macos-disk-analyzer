@@ -1,0 +1,15 @@
+[package]
+name = "analyze-ncdu"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde_json = "1"
+rustc-hash = "2"
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

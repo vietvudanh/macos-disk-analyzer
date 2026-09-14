@@ -67,6 +67,11 @@ def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
     return results
 
 
+def is_excluded_path(path: str) -> bool:
+    """Skip virtual/cloud files not realized on local disk (0 blocks, Drive File Provider)."""
+    return "/Library/CloudStorage/" in path or path.endswith("/Library/CloudStorage")
+
+
 def normalize_path(path: str) -> str:
     """Remove System/Volumes/Data prefix and extra leading slashes to deduplicate paths."""
     # First, normalize multiple leading slashes to single slash
@@ -85,6 +90,11 @@ def main():
         "--host",
         default=socket.gethostname(),
         help="Hostname used as the data subdirectory (default: current hostname)",
+    )
+    parser.add_argument(
+        "--include-cloudstorage",
+        action="store_true",
+        help="Include ~/Library/CloudStorage (Drive/iCloud placeholders, 0 blocks locally)",
     )
     args = parser.parse_args()
 
@@ -127,6 +137,8 @@ def main():
     seen_files = set()
     for entry in tqdm(entries, desc="Processing entries", unit=" entries"):
         norm_path = normalize_path(entry["path"])
+        if not args.include_cloudstorage and is_excluded_path(norm_path):
+            continue
         all_paths.add(norm_path)
         if not entry["is_directory"]:
             # Deduplicate: same file can appear under both / and /System/Volumes/Data

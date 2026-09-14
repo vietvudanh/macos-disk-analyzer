@@ -106,3 +106,6 @@ yarn-error.log
 ehthumbs.db
 Thumbs.db
 data/
+
+# Rust
+rs/target/
