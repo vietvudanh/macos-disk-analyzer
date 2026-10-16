@@ -1,0 +1,244 @@
+# Built-in cleanup rules used by disk_map.py.
+#
+# Personal additions go in my_cleanup_rules.toml — those are matched first
+# and shown at the top of the recommendations as "Your list".
+#
+# Each [[rule]]:
+#   label     shown in the recommendations panel
+#   paths     list of globs. "~" = your home, "*" = one path segment,
+#             "**/" = any number of segments, "{a,b}" = either name.
+#             A bare name like "node_modules" means "**/node_modules".
+#   tier      "safe"   - regenerates by itself, pre-selected
+#             "review" - costs a re-download/rebuild or may hold data you want
+#             "keep"   - never suggest (blocks lower rules for that subtree)
+#   note      why / how it comes back (optional)
+#   command   run this instead of `rm -rf` (optional). {path} / {parent} are
+#             substituted per match; without placeholders it runs once.
+#   needs     only match when the parent folder contains this file/dir,
+#             e.g. "Cargo.toml" for Rust target/ folders (optional)
+#   min_size_mb  ignore matches smaller than this (default 1)
+#
+# Rules are tried in order and the first match wins. Once a folder matches,
+# nothing inside it is matched again, except by rules in my_cleanup_rules.toml,
+# which can carve a piece out (or protect it with tier = "keep").
+
+# --- never touch ------------------------------------------------------------
+
+[[rule]]
+label = "macOS system"
+tier = "keep"
+paths = ["/System", "/private/var/vm", "/private/var/db", "/usr", "/bin", "/sbin", "/Library/Apple"]
+
+[[rule]]
+label = "Documents, photos and mail"
+tier = "keep"
+paths = ["~/Documents", "~/Pictures", "~/Movies", "~/Music", "~/Library/Mail", "~/Library/Messages", "~/Library/Mobile Documents"]
+
+[[rule]]
+label = "Files that installed apps and editors need"
+tier = "keep"
+paths = [
+  "/Applications", "~/Applications", "/opt/homebrew", "/usr/local",
+  "~/.*/extensions", "~/.local/share/nvim",
+  "~/Library/Application Support/*/**/{node_modules,.venv,venv,target,__pycache__}",
+]
+
+# --- safe: regenerated automatically ----------------------------------------
+
+[[rule]]
+label = "Trash"
+tier = "safe"
+paths = ["~/.Trash"]
+note = "Already deleted files"
+
+[[rule]]
+label = "npm cache"
+tier = "safe"
+paths = ["~/.npm/_cacache", "~/.npm/_npx"]
+command = "npm cache clean --force"
+note = "Re-downloaded on next npm install"
+
+[[rule]]
+label = "Yarn / pnpm / Bun caches"
+tier = "safe"
+paths = ["~/Library/Caches/Yarn", "~/.yarn/berry/cache", "~/Library/pnpm/store", "~/.local/share/pnpm/store", "~/.bun/install/cache"]
+note = "Package manager download caches"
+
+[[rule]]
+label = "uv / pip / Python tool caches"
+tier = "safe"
+paths = ["~/.cache/uv", "~/Library/Caches/uv", "~/.cache/pip", "~/Library/Caches/pip", "~/.cache/pre-commit", "~/.cache/pypoetry", "~/Library/Caches/pypoetry", "~/.conda/pkgs", "~/miniconda3/pkgs", "~/anaconda3/pkgs"]
+note = "Re-downloaded when needed"
+
+[[rule]]
+label = "Homebrew cache"
+tier = "safe"
+paths = ["~/Library/Caches/Homebrew"]
+command = "brew cleanup -s --prune=all"
+
+[[rule]]
+label = "Go build & module cache"
+tier = "safe"
+paths = ["~/Library/Caches/go-build", "~/.cache/go-build", "~/go/pkg/mod"]
+command = "go clean -cache -modcache"
+
+[[rule]]
+label = "Gradle & Maven caches"
+tier = "safe"
+paths = ["~/.gradle/caches", "~/.gradle/wrapper/dists", "~/.m2/repository"]
+note = "Re-downloaded on next build (first build is slower)"
+
+[[rule]]
+label = "Cargo registry cache"
+tier = "safe"
+paths = ["~/.cargo/registry/cache", "~/.cargo/registry/src", "~/.cargo/git/checkouts"]
+note = "Re-downloaded on next cargo build"
+
+[[rule]]
+label = "Browser automation & tool caches"
+tier = "safe"
+paths = ["~/.cache/puppeteer", "~/Library/Caches/ms-playwright", "~/.cache/ms-playwright", "~/Library/Caches/Cypress", "~/.cache/node-gyp", "~/Library/Caches/node-gyp", "~/Library/Caches/CocoaPods", "~/Library/Caches/JetBrains"]
+
+[[rule]]
+label = "Xcode DerivedData & caches"
+tier = "safe"
+paths = ["~/Library/Developer/Xcode/DerivedData", "~/Library/Developer/CoreSimulator/Caches", "~/Library/Caches/com.apple.dt.Xcode"]
+note = "Rebuilt by Xcode"
+
+[[rule]]
+label = "Editor caches (VS Code, Cursor, Slack…)"
+tier = "safe"
+paths = [
+  "~/Library/Application Support/{Code,Cursor,Windsurf,Slack,discord,Microsoft Teams}/{Cache,CachedData,CachedExtensionVSIXs,Code Cache,GPUCache,logs}",
+  "~/Library/Application Support/{Code,Cursor,Windsurf,Slack}/Service Worker/CacheStorage",
+]
+
+[[rule]]
+label = "JS build output (.next, .turbo, …)"
+tier = "safe"
+paths = [".next", ".turbo", ".nuxt", ".svelte-kit", ".parcel-cache", ".angular/cache", ".vite"]
+note = "Rebuilt by the next dev/build run"
+
+[[rule]]
+label = "Rust target/ folders"
+tier = "safe"
+paths = ["target"]
+needs = "Cargo.toml"
+command = "cd {parent} && cargo clean"
+note = "Rebuilt by cargo build"
+
+[[rule]]
+label = "Python caches (__pycache__, .pytest_cache…)"
+tier = "safe"
+paths = ["__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".nox"]
+min_size_mb = 5
+
+# --- review: costs a rebuild / re-download, or may hold data ---------------
+
+[[rule]]
+label = "Ollama models"
+tier = "review"
+paths = ["~/.ollama/models"]
+command = "ollama list   # then: ollama rm <model>"
+note = "Large; re-pull any model you still use"
+
+[[rule]]
+label = "Hugging Face / LM Studio / Torch models"
+tier = "review"
+paths = ["~/.cache/huggingface", "~/.lmstudio/models", "~/.cache/lm-studio", "~/.cache/torch", "~/.cache/whisper"]
+note = "Re-downloaded on next use"
+
+[[rule]]
+label = "Android SDK & emulators"
+tier = "review"
+paths = ["~/Library/Android/sdk/system-images", "~/.android/avd", "~/.android/cache"]
+note = "Delete emulator images you no longer use"
+
+[[rule]]
+label = "iOS simulators & device support"
+tier = "review"
+paths = ["~/Library/Developer/CoreSimulator/Devices", "~/Library/Developer/Xcode/iOS DeviceSupport", "~/Library/Developer/Xcode/watchOS DeviceSupport", "~/Library/Developer/Xcode/Archives"]
+note = "xcrun simctl delete unavailable removes stale simulators"
+
+[[rule]]
+label = "Docker / OrbStack disk image"
+tier = "review"
+paths = ["~/Library/Containers/com.docker.docker", "~/.orbstack"]
+command = "docker system prune -a"
+note = "Prune unused images instead of deleting the VM disk"
+
+[[rule]]
+label = "node_modules"
+tier = "review"
+paths = ["node_modules"]
+note = "Re-create with npm/pnpm install in projects you return to"
+
+[[rule]]
+label = "Python virtualenvs"
+tier = "review"
+paths = [".venv", "venv"]
+note = "Re-create with uv sync / pip install"
+
+[[rule]]
+label = "Toolchains (rustup, mise, nvm, pyenv)"
+tier = "review"
+paths = ["~/.rustup/toolchains", "~/.local/share/mise/installs", "~/.nvm/versions", "~/.pyenv/versions"]
+note = "Remove versions you no longer use"
+
+[[rule]]
+label = "Installers in Downloads"
+tier = "review"
+paths = ["~/Downloads/*.{dmg,pkg,zip,iso,xip}"]
+note = "Only big files (20 MB+) are listed"
+
+[[rule]]
+label = "App caches (~/Library/Caches)"
+tier = "review"
+paths = ["~/Library/Caches/*", "/Library/Caches/*"]
+note = "Apps rebuild these; browsers may sign you out of some sites"
+
+[[rule]]
+label = "Other ~/.cache"
+tier = "review"
+paths = ["~/.cache/*"]
+
+[[rule]]
+label = "Logs"
+tier = "review"
+paths = ["~/Library/Logs/*", "/Library/Logs/*", "/private/var/log"]
+min_size_mb = 10
+
+# --- map colours ------------------------------------------------------------
+# First matching path wins; folders inherit their parent's category.
+
+[[category]]
+name = "Package caches"
+paths = ["~/.npm", "~/.gradle", "~/.m2", "~/.cargo", "~/.cache", "~/Library/Caches", "~/.bun", "~/go/pkg", "~/.yarn", "~/Library/pnpm", "~/.conda"]
+
+[[category]]
+name = "AI models"
+paths = ["~/.ollama", "~/.cache/huggingface", "~/.lmstudio", "~/.cache/lm-studio", "~/.cache/torch", "~/.cache/whisper"]
+
+[[category]]
+name = "iOS & Android SDKs"
+paths = ["~/Library/Developer", "~/Library/Android", "~/.android"]
+
+[[category]]
+name = "Code projects"
+paths = ["~/works", "~/work", "~/code", "~/Code", "~/projects", "~/src", "~/dev", "~/repos", "~/git", "~/github", "~/Developer", "~/go/src"]
+
+[[category]]
+name = "Documents & media"
+paths = ["~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Movies", "~/Music", "~/Library/Mobile Documents"]
+
+[[category]]
+name = "Applications"
+paths = ["/Applications", "~/Applications", "~/Library/Application Support", "~/Library/Containers", "~/Library/Group Containers"]
+
+[[category]]
+name = "Dev tools & other"
+paths = ["~/.*", "/opt", "/usr/local", "/nix"]
+
+[[category]]
+name = "System"
+paths = ["/System", "/private", "/usr", "/Library", "/bin", "/sbin", "/cores", "~/Library"]

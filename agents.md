@@ -14,6 +14,16 @@ sudo ncdu -o data/$(hostname)/disk_usage.json /
 uvx --with tqdm python analyze_ncdu_v2.py
 ```
 
+### Disk map (treemap + suggestions)
+
+```bash
+make map   # uvx python disk_map.py -> data/$(hostname)/disk_map.html + cleanup_suggested.sh
+```
+
+- Rules: `my_cleanup_rules.toml` (user's own list, matched first, carves out of built-in matches, `tier = "keep"` protects) then `cleanup_rules.toml` (built-in safe/review/keep rules + `[[category]]` map colours).
+- Once a folder matches a built-in rule, nothing inside it is matched again by built-in rules.
+- `disk_map_template.html` is the page; Python replaces `/*__DATA__*/null` with the JSON payload.
+
 ## Executive Summary
 
 This tool analyzes the entire macOS root filesystem to identify large directories and files that can potentially be cleaned to free up disk space. The analysis groups similar directories (node_modules, .venv, etc.) and provides aggregated statistics.

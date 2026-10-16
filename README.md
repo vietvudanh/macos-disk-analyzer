@@ -103,6 +103,35 @@ awk '{print $2}' data/$(hostname)/cleanable_target_paths.txt | xargs rm -rf
 awk '$1 > 0.5 {print $2}' data/$(hostname)/cleanable_target_paths.txt | xargs rm -rf
 ```
 
+## Disk map & cleanup suggestions
+
+```bash
+make map          # or: uvx python disk_map.py && open data/$(hostname)/disk_map.html
+```
+
+`disk_map.py` (Python 3.11+, no dependencies) turns the same scan into an interactive page, `data/<hostname>/disk_map.html`:
+
+- **Explorer**: a treemap of the disk sized by space used and coloured by category. Click a tile to open it. Striped tiles are cleanup suggestions. **Cleanup** mode greys out everything except suggestions.
+- **Recommendations**: grouped as *Your list*, *Safe to remove* and *Review first*. Tick items and the totals update. **Copy script** / **Download .sh** builds a shell script from your selection.
+- `data/<hostname>/cleanup_suggested.sh`: the same suggestions as a script. Review items are commented out.
+
+### Your own "usually deletable" list
+
+Put the things you always delete in **`my_cleanup_rules.toml`**. These rules are checked before the built-in ones, are pre-selected, and are listed first:
+
+```toml
+[[rule]]
+label = "Scratch projects"
+paths = ["~/Desktop/sandbox", "~/works/old-*"]   # ~ home, * one segment, **/ any depth, {a,b}
+
+[[rule]]
+label = "Keep my HF models"   # protect something the built-in rules would suggest
+tier = "keep"
+paths = ["~/.cache/huggingface"]
+```
+
+The built-in rules live in `cleanup_rules.toml` (npm/uv/Gradle/Cargo caches, Xcode DerivedData, `.next`, Rust `target/` next to a `Cargo.toml`, node_modules, venvs, Ollama models, simulators, …). Each rule can set a `command` (for example `npm cache clean --force`) that runs instead of `rm -rf`. The same file holds the category colours used on the map.
+
 ## Cleanable Directory Categories
 
 | Category | Safe to delete? | Notes |
@@ -124,10 +153,15 @@ awk '$1 > 0.5 {print $2}' data/$(hostname)/cleanable_target_paths.txt | xargs rm
 ```
 .
 ├── analyze_ncdu_v2.py   # Main analysis script (recommended)
-├── analyze_ncdu.py      # Older version using DuckDB/pandas
+├── disk_map.py               # Interactive disk map + cleanup suggestions
+├── disk_map_template.html    # Page template used by disk_map.py
+├── cleanup_rules.toml        # Built-in "usually deletable" rules + map categories
+├── my_cleanup_rules.toml     # YOUR rules: matched first, listed first
 └── data/
     └── <hostname>/
         ├── disk_usage.json          # ncdu scan output (not committed)
+        ├── disk_map.html            # Generated map (not committed)
+        ├── cleanup_suggested.sh     # Generated script (not committed)
         └── cleanable_*_paths.txt    # Generated path lists (not committed)
 ```
 

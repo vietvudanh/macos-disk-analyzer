@@ -1,4 +1,4 @@
-.PHONY: all scan analyze analyze-rs clean help
+.PHONY: all scan analyze analyze-rs map clean help
 
 # Variables
 HOSTNAME := $(shell hostname)
@@ -32,6 +32,15 @@ analyze-rs:
 	@echo "Analyzing $(NCDU_OUTPUT)..."
 	@./rs/target/release/analyze-ncdu
 
+## map: Build the interactive disk map + cleanup suggestions
+map:
+	@if [ ! -f $(NCDU_OUTPUT) ]; then \
+		echo "Error: $(NCDU_OUTPUT) not found. Run 'make scan' first."; \
+		exit 1; \
+	fi
+	uvx python disk_map.py
+	open $(DATA_DIR)/disk_map.html
+
 ## clean: Remove the data directory
 clean:
 	@echo "Removing all data..."
@@ -45,6 +54,7 @@ help:
 	@echo "  scan    Run ncdu to scan the disk (requires sudo)"
 	@echo "  analyze Run the analysis script on the scanned data"
 	@echo "  analyze-rs Run the Rust binary (faster, same output)"
+	@echo "  map     Build the interactive disk map (data/<host>/disk_map.html)"
 	@echo "  all     Run both scan and analyze"
 	@echo "  clean   Remove the data directory"
 	@echo "  help    Show this help message"

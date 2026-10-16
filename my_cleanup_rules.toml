@@ -1,0 +1,37 @@
+# YOUR list of things you usually delete.
+#
+# disk_map.py checks these rules BEFORE the built-in cleanup_rules.toml, lists
+# matches at the top of the recommendations as "Your list" and pre-selects them.
+# Same format as cleanup_rules.toml; tier defaults to "mine".
+# Use tier = "keep" to protect something the built-in rules would suggest.
+#
+#   paths: "~" = home, "*" = one segment, "**/" = any depth, "{a,b}" = either.
+#          A bare name like "dist" matches that folder name anywhere.
+
+[[rule]]
+label = "Old installers in Downloads"
+paths = ["~/Downloads/*.{dmg,pkg,iso,xip}"]
+note = "Apps are already installed"
+
+[[rule]]
+label = "Trash"
+paths = ["~/.Trash"]
+
+# Examples — uncomment and adapt:
+#
+# [[rule]]
+# label = "Scratch projects"
+# paths = ["~/Desktop/sandbox", "~/tmp"]
+#
+# [[rule]]
+# label = "Old screen recordings"
+# paths = ["~/Desktop/Screen Recording*.mov"]
+#
+# [[rule]]
+# label = "Local LLM I never use"
+# paths = ["~/.ollama/models/blobs"]
+#
+# [[rule]]
+# label = "Keep my Hugging Face cache"
+# tier = "keep"
+# paths = ["~/.cache/huggingface"]
