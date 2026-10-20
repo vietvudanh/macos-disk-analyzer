@@ -1,17 +1,45 @@
 # macOS Disk Usage Analysis Summary
 
 **Tool Used:** ncdu (https://dev.yorhel.nl/ncdu)  
-**Script:** analyze_ncdu_v2.py
+**Scripts:** analyze_ncdu_v2.py, compare_ncdu.py
 
-## How to Run the Analysis
+## How to Run the Analysis & Comparisons
 
 ```bash
-# Step 1: Generate ncdu JSON file (run as root to scan everything)
-sudo ncdu -o data/$(hostname)/disk_usage.json /
+# 1. Capture a dated compressed snapshot (Zstandard compressed, ~85% space saved)
+make snapshot
+# (Or manually: sudo ncdu -c -o data/$(hostname)/snapshots/disk_usage_$(date +"%Y-%m-%d_%H%M%S").json.zst /)
 
-# Step 2: Run the analysis script
-# default works with file in data/$(hostname)/, temp files are written to there too
-uvx --with tqdm python analyze_ncdu_v2.py
+# Run daily snapshot automatically at 02:00 AM via macOS LaunchDaemon
+sudo make schedule-install
+make schedule-status
+
+# 2. Analyze the latest snapshot (auto-decompresses .json.zst, .json.gz, or .json)
+make analyze
+# (Or: uvx --with tqdm python analyze_ncdu_v2.py)
+
+# 3. List available snapshots (shows date, compression format, size)
+make snapshots
+# (Or: python compare_ncdu.py --list)
+
+# 4. Compare changes between snapshots over time (growing, shrinking, new, same)
+make compare
+# (Or: uvx --with tqdm python compare_ncdu.py --before 1 --after 2)
+
+# 5. Compress existing raw .json snapshots to .json.zst to reclaim disk space
+make compress-snapshots
+
+# 6. Convert snapshot to Parquet format via DuckDB
+make parquet
+# (Or: python compare_ncdu.py --to-parquet)
+
+# 7. Query snapshot with DuckDB SQL (sub-100ms queries on 3M+ files)
+make duckdb
+make sql QUERY="SELECT category, count(*), ROUND(SUM(size_bytes)/1e9, 2) AS gb FROM 'data/VietVu-02/disk_usage.parquet' GROUP BY category;"
+
+# 8. Interactive DuckDB diff shell between snapshots & export diff.parquet
+make diff-shell
+make compare-export
 ```
 
 ### Disk map (treemap + suggestions)

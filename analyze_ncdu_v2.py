@@ -6,12 +6,44 @@ Run with: uvx --with tqdm python analyze_ncdu_v2.py
 """
 
 import argparse
+import gzip
+import io
 import json
 import socket
+import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, Tuple
 from collections import defaultdict
-from tqdm import tqdm
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, *args, **kwargs):
+        return iterable
+
+
+def open_snapshot_file(file_path: Path):
+    """Open snapshot file and return a text stream, transparently decompressing .zst or .gz."""
+    file_path = Path(file_path)
+    name = file_path.name.lower()
+    if ".gz" in name:
+        return gzip.open(file_path, "rt", encoding="utf-8")
+    elif ".zst" in name:
+        try:
+            import zstandard as zstd
+            dctx = zstd.ZstdDecompressor()
+            f = open(file_path, "rb")
+            reader = dctx.stream_reader(f)
+            return io.TextIOWrapper(reader, encoding="utf-8")
+        except ImportError:
+            proc = subprocess.Popen(
+                ["zstd", "-dc", str(file_path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            return io.TextIOWrapper(proc.stdout, encoding="utf-8")
+    else:
+        return open(file_path, "r", encoding="utf-8")
 
 
 def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
@@ -92,6 +124,16 @@ def main():
         help="Hostname used as the data subdirectory (default: current hostname)",
     )
     parser.add_argument(
+        "--file",
+        "-f",
+        help="Path to specific ncdu JSON file to analyze",
+    )
+    parser.add_argument(
+        "--snapshot",
+        "-s",
+        help="Snapshot date, index, or filename to analyze (e.g. 2026-03-30, #1)",
+    )
+    parser.add_argument(
         "--include-cloudstorage",
         action="store_true",
         help="Include ~/Library/CloudStorage (Drive/iCloud placeholders, 0 blocks locally)",
@@ -100,20 +142,43 @@ def main():
 
     data_dir = Path("data") / args.host
 
+    input_file = None
+    if args.file:
+        input_file = Path(args.file)
+        data_dir = input_file.parent
+    elif args.snapshot:
+        # Search for matching snapshot file in data/
+        for p in Path("data").rglob("*"):
+            if p.is_file() and (".json" in p.name or ".zst" in p.name or ".gz" in p.name):
+                if args.snapshot in str(p) or args.snapshot in p.name:
+                    input_file = p
+                    data_dir = p.parent
+                    break
+        if not input_file:
+            print(f"Error: No snapshot found matching '{args.snapshot}'.")
+            return
+    else:
+        candidates = [
+            data_dir / "disk_usage.json.zst",
+            data_dir / "disk_usage.json.gz",
+            data_dir / "disk_usage.json",
+        ]
+        input_file = next((c for c in candidates if c.exists()), candidates[0])
+
     # Set up output directory
     data_dir.mkdir(parents=True, exist_ok=True)
     print(f"Host: {args.host}")
     print(f"Output directory: {data_dir}/")
+    print(f"Analyzing file: {input_file}")
 
-    # Load ncdu JSON
-    print("Loading ncdu JSON file...")
-    input_file = data_dir / "disk_usage.json"
+    # Load ncdu snapshot
+    print("Loading ncdu snapshot file...")
     if not input_file.exists():
         print(
             f"Error: {input_file} not found. Please run ncdu and save output to this file."
         )
         return
-    with input_file.open("r") as f:
+    with open_snapshot_file(input_file) as f:
         data = json.load(f)
 
     # Parse metadata

@@ -12,11 +12,13 @@ Writes:   data/<host>/disk_map.html     open it in a browser
 """
 
 import argparse
+import gzip
 import json
 import re
 import shlex
 import shutil
 import socket
+import subprocess
 import sys
 import time
 import tomllib
@@ -333,14 +335,21 @@ def main():
     sys.setrecursionlimit(100_000)
 
     data_dir = HERE / "data" / args.host
-    input_file = data_dir / "disk_usage.json"
-    if not input_file.exists():
-        sys.exit(f"{input_file} not found. Run: sudo ncdu -o {input_file} /")
+    candidates = [data_dir / n for n in ("disk_usage.json.zst", "disk_usage.json.gz", "disk_usage.json")]
+    input_file = next((c for c in candidates if c.exists()), None)
+    if input_file is None:
+        sys.exit(f"No snapshot in {data_dir}. Run: make snapshot")
 
     t0 = time.time()
     print(f"Loading {input_file} ...")
-    with input_file.open() as f:
-        raw = json.load(f)
+    if input_file.suffix == ".zst":
+        raw = json.loads(subprocess.run(["zstd", "-dc", str(input_file.resolve())], capture_output=True, check=True).stdout)
+    elif input_file.suffix == ".gz":
+        with gzip.open(input_file, "rt", encoding="utf-8") as f:
+            raw = json.load(f)
+    else:
+        with input_file.open() as f:
+            raw = json.load(f)
     scanned_at = raw[2].get("timestamp")
 
     def skip(path):

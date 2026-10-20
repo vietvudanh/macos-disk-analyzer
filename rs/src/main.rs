@@ -135,17 +135,41 @@ fn main() {
     println!("Host: {}", host);
     println!("Output directory: {}/", data_dir.display());
 
-    println!("Loading ncdu JSON file...");
-    let input = data_dir.join("disk_usage.json");
+    let candidates = [
+        data_dir.join("disk_usage.json.zst"),
+        data_dir.join("disk_usage.json.gz"),
+        data_dir.join("disk_usage.json"),
+    ];
+    let input = candidates
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .unwrap_or_else(|| candidates[0].clone());
     if !input.exists() {
         println!(
-            "Error: {} not found. Please run ncdu and save output to this file.",
-            input.display()
+            "Error: no snapshot found (.json.zst, .json.gz, .json) in {}.",
+            data_dir.display()
         );
         return;
     }
-    let f = std::fs::read(&input).expect("read json");
-    let data: Value = serde_json::from_slice(&f).expect("parse ncdu json");
+    println!("Loading snapshot file: {}...", input.display());
+    let path_str = input.to_string_lossy();
+    let bytes = if path_str.ends_with(".zst") {
+        let out = std::process::Command::new("zstd")
+            .args(["-dc", input.to_str().unwrap()])
+            .output()
+            .expect("failed to run zstd -dc");
+        out.stdout
+    } else if path_str.ends_with(".gz") {
+        let out = std::process::Command::new("gzip")
+            .args(["-dc", input.to_str().unwrap()])
+            .output()
+            .expect("failed to run gzip -dc");
+        out.stdout
+    } else {
+        std::fs::read(&input).expect("read json")
+    };
+    let data: Value = serde_json::from_slice(&bytes).expect("parse ncdu json");
 
     let meta = &data[2];
     let prog = meta.get("progname").and_then(|v| v.as_str()).unwrap_or("");

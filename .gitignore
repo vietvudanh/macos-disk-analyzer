@@ -109,3 +109,6 @@ data/
 
 # Rust
 rs/target/
+
+# Local binaries
+bin/
