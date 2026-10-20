@@ -114,6 +114,10 @@ make map          # or: uvx python disk_map.py && open data/$(hostname)/disk_map
 
 `disk_map.py` (Python 3.11+, no dependencies) turns the same scan into an interactive page, `data/<hostname>/disk_map.html`:
 
+![Disk map: treemap explorer with striped cleanup suggestions and a recommendations panel](docs/disk_map.png)
+
+*Screenshot built from a synthetic snapshot of a demo user, not a real disk.*
+
 - **Explorer**: a treemap of the disk sized by space used and coloured by category. Click a tile to open it. Striped tiles are cleanup suggestions. **Cleanup** mode greys out everything except suggestions.
 - **Recommendations**: grouped as *Your list*, *Safe to remove* and *Review first*. Tick items and the totals update. **Copy script** / **Download .sh** builds a shell script from your selection.
 - `data/<hostname>/cleanup_suggested.sh`: the same suggestions as a script. Review items are commented out.
