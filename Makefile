@@ -1,7 +1,7 @@
 SHELL := /bin/zsh
 export PATH := $(HOME)/.local/bin:/opt/homebrew/bin:/usr/local/bin:$(PATH)
 
-.PHONY: all scan snapshot snapshots compare compare-export analyze analyze-rs map clean help schedule-install schedule-uninstall schedule-status schedule-run compress-snapshots parquet duckdb sql diff-shell
+.PHONY: all scan snapshot snapshots compare compare-export analyze analyze-rs build-go analyze-go map clean help schedule-install schedule-uninstall schedule-status schedule-run compress-snapshots parquet duckdb sql diff-shell
 
 # Variables
 PYTHON ?= /usr/bin/python3
@@ -95,6 +95,19 @@ analyze-rs:
 	@echo "Analyzing latest snapshot..."
 	@./rs/target/release/analyze-ncdu
 
+## build-go: Build the Go analysis binary
+build-go:
+	@cd src-go && go build -o bin/analyze-ncdu .
+
+## analyze-go: Run the Go analysis binary (faster, same output)
+analyze-go: build-go
+	@if [ ! -f $(NCDU_OUTPUT) ] && [ ! -f $(DATA_DIR)/disk_usage.json ] && [ ! -f $(DATA_DIR)/disk_usage.json.gz ]; then \
+		echo "Error: no snapshot found in $(DATA_DIR). Run 'make scan' or 'make snapshot' first."; \
+		exit 1; \
+	fi
+	@echo "Analyzing latest snapshot..."
+	@./src-go/bin/analyze-ncdu
+
 ## map: Build the interactive disk map + cleanup suggestions
 map:
 	@if [ ! -f $(NCDU_OUTPUT) ] && [ ! -f $(DATA_DIR)/disk_usage.json ] && [ ! -f $(DATA_DIR)/disk_usage.json.gz ]; then \
@@ -172,6 +185,8 @@ help:
 	@echo "  diff-shell         Launch interactive DuckDB SQL shell on snapshot diff view"
 	@echo "  analyze            Run the analysis script on the latest scanned data"
 	@echo "  analyze-rs         Run the Rust binary on the latest scanned data"
+	@echo "  build-go           Build the Go binary (src-go/bin/analyze-ncdu)"
+	@echo "  analyze-go         Run the Go binary on the latest scanned data"
 	@echo "  map                Build the interactive disk map (data/<host>/disk_map.html)"
 	@echo "  schedule-install   Install daily 02:00 AM LaunchDaemon (requires sudo)"
 	@echo "  schedule-uninstall Remove daily LaunchDaemon (requires sudo)"

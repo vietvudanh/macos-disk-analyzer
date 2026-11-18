@@ -37,7 +37,7 @@ def open_snapshot_file(file_path: Path):
             return io.TextIOWrapper(reader, encoding="utf-8")
         except ImportError:
             proc = subprocess.Popen(
-                ["zstd", "-dc", str(file_path)],
+                ["zstd", "-dcf", str(file_path)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )

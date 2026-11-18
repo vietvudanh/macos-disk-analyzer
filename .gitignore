@@ -110,5 +110,10 @@ data/
 # Rust
 rs/target/
 
+# Go
+src-go/bin/
+src-go/analyze-ncdu
+src-go/macos-disk-analyzer-go
+
 # Local binaries
 bin/
