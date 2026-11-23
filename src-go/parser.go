@@ -23,6 +23,8 @@ type ScanMeta struct {
 type NodeMeta struct {
 	ASize  uint64
 	DSize  uint64
+	Ino    uint64
+	Hlnkc  bool
 	NotReg bool
 }
 
@@ -70,23 +72,25 @@ func openSnapshotStream(path string) (io.Reader, func() error, error) {
 }
 
 type jsonScanner struct {
-	r       io.Reader
-	buf     []byte
-	pos     int
-	end     int
-	eof     bool
-	keyBuf  []byte
-	nameBuf []byte
-	normBuf []byte
+	r          io.Reader
+	buf        []byte
+	pos        int
+	end        int
+	eof        bool
+	keyBuf     []byte
+	nameBuf    []byte
+	normBuf    []byte
+	seenInodes map[uint64]struct{}
 }
 
 func newJSONScanner(r io.Reader) *jsonScanner {
 	return &jsonScanner{
-		r:       r,
-		buf:     make([]byte, 1<<20),
-		keyBuf:  make([]byte, 0, 64),
-		nameBuf: make([]byte, 0, 256),
-		normBuf: make([]byte, 0, 512),
+		r:          r,
+		buf:        make([]byte, 1<<20),
+		keyBuf:     make([]byte, 0, 64),
+		nameBuf:    make([]byte, 0, 256),
+		normBuf:    make([]byte, 0, 512),
+		seenInodes: make(map[uint64]struct{}, 65536),
 	}
 }
 
@@ -542,6 +546,10 @@ func (s *jsonScanner) readNodeMeta() (NodeMeta, error) {
 			meta.ASize, err = s.readUint64()
 		case "dsize":
 			meta.DSize, err = s.readUint64()
+		case "ino":
+			meta.Ino, err = s.readUint64()
+		case "hlnkc":
+			meta.Hlnkc, err = s.readBool()
 		case "notreg":
 			meta.NotReg, err = s.readBool()
 		default:
@@ -591,23 +599,15 @@ func (s *jsonScanner) walkDir(
 	*buf = append(*buf, s.nameBuf...)
 	s.normBuf = normalizePathInto(*buf, s.normBuf)
 
-	nextByte, err := s.peekNonWS()
-	if err != nil {
-		return err
-	}
-	hasChildren := nextByte == ','
 	excluded := !includeCloud && isExcludedBytes(s.normBuf)
-	isDir := hasChildren || meta.NotReg
 
+	// In ncdu JSON, an array node is always a directory.
 	stats.TotalEntries++
 	if !excluded {
-		sz := meta.DSize
-		if sz == 0 {
-			sz = meta.ASize
-		}
-		table.upsert(s.normBuf, int64(sz), isDir)
+		table.upsert(s.normBuf, int64(meta.DSize), true)
 	}
 
+	var nextByte byte
 	for {
 		nextByte, err = s.peekNonWS()
 		if err != nil {
@@ -638,11 +638,18 @@ func (s *jsonScanner) walkDir(
 			s.normBuf = normalizePathInto(*buf, s.normBuf)
 			stats.TotalEntries++
 			if includeCloud || !isExcludedBytes(s.normBuf) {
-				sz := cmeta.DSize
-				if sz == 0 {
-					sz = cmeta.ASize
+				skipHardlink := false
+				if cmeta.Hlnkc && cmeta.Ino != 0 {
+					if _, seen := s.seenInodes[cmeta.Ino]; seen {
+						skipHardlink = true
+					} else {
+						s.seenInodes[cmeta.Ino] = struct{}{}
+					}
 				}
-				table.upsert(s.normBuf, int64(sz), false)
+				if !skipHardlink {
+					// Use actual disk size only (do not fall back to asize for sparse/cloud files).
+					table.upsert(s.normBuf, int64(cmeta.DSize), false)
+				}
 			}
 			*buf = (*buf)[:prev]
 		default:

@@ -134,6 +134,21 @@ func nthSlashPrefix(b []byte, slashes int) ([]byte, bool) {
 }
 
 func main() {
+	if filepath.Base(os.Args[0]) == "disk-map" {
+		if err := runDiskMap(os.Args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && (os.Args[1] == "map" || os.Args[1] == "disk-map") {
+		if err := runDiskMap(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	t0 := time.Now()
 	host := defaultHost()
 	includeCloud := false
