@@ -37,7 +37,7 @@ def open_snapshot_file(file_path: Path):
             return io.TextIOWrapper(reader, encoding="utf-8")
         except ImportError:
             proc = subprocess.Popen(
-                ["zstd", "-dc", str(file_path)],
+                ["zstd", "-dcf", str(file_path)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )
@@ -59,18 +59,19 @@ def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
         return results
     name = metadata.get("name", "")
     current_path = f"{parent_path}/{name}" if parent_path else f"/{name}"
-    # Get size information (in bytes, ncdu stores as blocks)
+    # Get size information (actual disk usage; do not fall back to asize for sparse/cloud files)
     asize = metadata.get("asize", 0)  # Apparent size
     dsize = metadata.get("dsize", 0)  # Disk size (actual space used)
-    is_dir = len(node) > 1 or metadata.get("notreg", False)
-    # Add current node
+    # In ncdu JSON, a list node is always a directory
     results.append(
         {
             "path": current_path,
             "name": name,
             "apparent_size_bytes": asize,
-            "disk_size_bytes": dsize if dsize else asize,
-            "is_directory": is_dir,
+            "disk_size_bytes": dsize,
+            "is_directory": True,
+            "hlnkc": False,
+            "ino": 0,
             "depth": current_path.count("/"),
         }
     )
@@ -91,8 +92,10 @@ def parse_ncdu_tree(node: List, parent_path: str = "") -> List[Dict[str, Any]]:
                     "path": child_path,
                     "name": child_name,
                     "apparent_size_bytes": child_asize,
-                    "disk_size_bytes": child_dsize if child_dsize else child_asize,
+                    "disk_size_bytes": child_dsize,
                     "is_directory": False,
+                    "hlnkc": bool(child.get("hlnkc", False)),
+                    "ino": child.get("ino", 0),
                     "depth": child_path.count("/"),
                 }
             )
@@ -199,18 +202,21 @@ def main():
     print("Aggregating sizes by path...")
     path_sizes = {}
     all_paths = set()
-    seen_files = set()
+    seen_inodes = set()
     for entry in tqdm(entries, desc="Processing entries", unit=" entries"):
         norm_path = normalize_path(entry["path"])
         if not args.include_cloudstorage and is_excluded_path(norm_path):
             continue
-        all_paths.add(norm_path)
         if not entry["is_directory"]:
-            # Deduplicate: same file can appear under both / and /System/Volumes/Data
-            fid = (norm_path, entry["apparent_size_bytes"], entry["disk_size_bytes"])
-            if fid not in seen_files:
-                seen_files.add(fid)
-                path_sizes[norm_path] = entry["disk_size_bytes"]
+            # Count hard-linked files once (matches ncdu & disk_map.py)
+            if entry["hlnkc"] and entry["ino"]:
+                if entry["ino"] in seen_inodes:
+                    continue
+                seen_inodes.add(entry["ino"])
+            all_paths.add(norm_path)
+            path_sizes[norm_path] = entry["disk_size_bytes"]
+        else:
+            all_paths.add(norm_path)
 
     print(f"After deduplication: {len(path_sizes)} unique paths")
 
