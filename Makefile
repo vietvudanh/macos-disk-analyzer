@@ -1,7 +1,7 @@
 SHELL := /bin/zsh
 export PATH := $(HOME)/.local/bin:/opt/homebrew/bin:/usr/local/bin:$(PATH)
 
-.PHONY: all scan snapshot snapshots compare compare-export analyze analyze-rs build-go analyze-go map clean help schedule-install schedule-uninstall schedule-status schedule-run compress-snapshots parquet duckdb sql diff-shell
+.PHONY: all scan snapshot snapshots compare compare-export analyze analyze-rs build-go analyze-go map map-go clean help schedule-install schedule-uninstall schedule-status schedule-run compress-snapshots parquet duckdb sql diff-shell
 
 # Variables
 PYTHON ?= /usr/bin/python3
@@ -13,6 +13,8 @@ DATA_DIR := data/$(HOSTNAME)
 SNAPSHOTS_DIR := $(DATA_DIR)/snapshots
 NCDU_OUTPUT := $(DATA_DIR)/disk_usage.json.zst
 SNAPSHOT_OUTPUT := $(SNAPSHOTS_DIR)/disk_usage_$(DATE).json.zst
+NCPU := $(shell sysctl -n hw.ncpu 2>/dev/null || echo 4)
+NCDU_FLAGS ?= -0 -e -t $(NCPU) --exclude /System/Volumes/Data --exclude /Volumes --exclude '*/Library/CloudStorage'
 
 # LaunchDaemon Schedule configuration
 PLIST_LABEL := com.vietvu.macos-disk-analyzer.snapshot
@@ -27,11 +29,11 @@ scan: snapshot
 ## snapshot: Capture a dated disk usage snapshot with ncdu using Zstandard compression (requires sudo if not root)
 snapshot:
 	@mkdir -p $(SNAPSHOTS_DIR)
-	@echo "Starting disk scan with ncdu (Zstandard compression)..."
+	@echo "Starting disk scan with ncdu (Zstandard compression, $(NCPU) threads)..."
 	@if [ "$$(id -u)" -eq 0 ]; then \
-		ncdu -c -o $(SNAPSHOT_OUTPUT) /; \
+		time ncdu $(NCDU_FLAGS) -c -o $(SNAPSHOT_OUTPUT) /; \
 	else \
-		sudo ncdu -c -o $(SNAPSHOT_OUTPUT) /; \
+		time sudo ncdu $(NCDU_FLAGS) -c -o $(SNAPSHOT_OUTPUT) /; \
 	fi
 	@ln -sf snapshots/disk_usage_$(DATE).json.zst $(NCDU_OUTPUT) 2>/dev/null || cp $(SNAPSHOT_OUTPUT) $(NCDU_OUTPUT)
 	@chmod 644 $(SNAPSHOT_OUTPUT) $(NCDU_OUTPUT) 2>/dev/null || true
@@ -117,6 +119,15 @@ map:
 	uvx python disk_map.py
 	open $(DATA_DIR)/disk_map.html
 
+## map-go: Build the interactive disk map + cleanup suggestions using the Go binary (faster, same output)
+map-go: build-go
+	@if [ ! -f $(NCDU_OUTPUT) ] && [ ! -f $(DATA_DIR)/disk_usage.json ] && [ ! -f $(DATA_DIR)/disk_usage.json.gz ]; then \
+		echo "Error: no snapshot found in $(DATA_DIR). Run 'make scan' or 'make snapshot' first."; \
+		exit 1; \
+	fi
+	./src-go/bin/analyze-ncdu map
+	open $(DATA_DIR)/disk_map.html
+
 ## schedule-install: Install and load the daily snapshot LaunchDaemon at 02:00 AM (requires sudo)
 schedule-install:
 	@echo "Configuring daily LaunchDaemon at 02:00 AM..."
@@ -188,6 +199,7 @@ help:
 	@echo "  build-go           Build the Go binary (src-go/bin/analyze-ncdu)"
 	@echo "  analyze-go         Run the Go binary on the latest scanned data"
 	@echo "  map                Build the interactive disk map (data/<host>/disk_map.html)"
+	@echo "  map-go             Build the interactive disk map using the Go binary (faster)"
 	@echo "  schedule-install   Install daily 02:00 AM LaunchDaemon (requires sudo)"
 	@echo "  schedule-uninstall Remove daily LaunchDaemon (requires sudo)"
 	@echo "  schedule-status    Check LaunchDaemon status and show recent logs"

@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
@@ -105,6 +105,8 @@ struct ScanMeta {
 struct NodeMeta {
     asize: u64,
     dsize: u64,
+    ino: u64,
+    hlnkc: bool,
     notreg: bool,
 }
 
@@ -117,15 +119,19 @@ struct JsonScanner<R: BufRead> {
     key_buf: Vec<u8>,
     name_buf: Vec<u8>,
     norm_buf: String,
+    seen_inodes: FxHashSet<u64>,
 }
 
 impl<R: BufRead> JsonScanner<R> {
     fn new(r: R) -> Self {
+        let mut seen_inodes = FxHashSet::default();
+        seen_inodes.reserve(65_536);
         Self {
             r,
             key_buf: Vec::with_capacity(64),
             name_buf: Vec::with_capacity(256),
             norm_buf: String::with_capacity(512),
+            seen_inodes,
         }
     }
 
@@ -476,6 +482,8 @@ impl<R: BufRead> JsonScanner<R> {
         let mut meta = NodeMeta {
             asize: 0,
             dsize: 0,
+            ino: 0,
+            hlnkc: false,
             notreg: false,
         };
         self.name_buf.clear();
@@ -497,6 +505,8 @@ impl<R: BufRead> JsonScanner<R> {
                 }
                 b"asize" => self.read_u64().map(|v| meta.asize = v),
                 b"dsize" => self.read_u64().map(|v| meta.dsize = v),
+                b"ino" => self.read_u64().map(|v| meta.ino = v),
+                b"hlnkc" => self.read_bool().map(|v| meta.hlnkc = v),
                 b"notreg" => self.read_bool().map(|v| meta.notreg = v),
                 _ => self.skip_value(),
             };
@@ -528,28 +538,18 @@ impl<R: BufRead> JsonScanner<R> {
             return Ok(());
         }
 
-        let meta = self.read_node_meta()?;
+        let _meta = self.read_node_meta()?;
         let prev_len = buf.len();
         buf.push(b'/');
         buf.extend_from_slice(&self.name_buf);
 
         normalize_path_into(buf, &mut self.norm_buf);
-        let has_children = self.peek_non_ws()? == b',';
         let excluded = !include_cloud && is_excluded_path(&self.norm_buf);
-        let is_dir = has_children || meta.notreg;
 
+        // In ncdu JSON, an array node is always a directory.
         stats.total_entries += 1;
-        if !excluded {
-            if !is_dir {
-                let sz = if meta.dsize != 0 { meta.dsize } else { meta.asize };
-                if let Some(slot) = entries.get_mut(self.norm_buf.as_str()) {
-                    *slot = Some(sz);
-                } else {
-                    entries.insert(Box::from(self.norm_buf.as_str()), Some(sz));
-                }
-            } else if !entries.contains_key(self.norm_buf.as_str()) {
-                entries.insert(Box::from(self.norm_buf.as_str()), None);
-            }
+        if !excluded && !entries.contains_key(self.norm_buf.as_str()) {
+            entries.insert(Box::from(self.norm_buf.as_str()), None);
         }
 
         while self.peek_non_ws()? == b',' {
@@ -564,15 +564,17 @@ impl<R: BufRead> JsonScanner<R> {
                     normalize_path_into(buf, &mut self.norm_buf);
                     stats.total_entries += 1;
                     if include_cloud || !is_excluded_path(&self.norm_buf) {
-                        let sz = if cmeta.dsize != 0 {
-                            cmeta.dsize
-                        } else {
-                            cmeta.asize
-                        };
-                        if let Some(slot) = entries.get_mut(self.norm_buf.as_str()) {
-                            *slot = Some(sz);
-                        } else {
-                            entries.insert(Box::from(self.norm_buf.as_str()), Some(sz));
+                        let skip_hardlink = cmeta.hlnkc
+                            && cmeta.ino != 0
+                            && !self.seen_inodes.insert(cmeta.ino);
+                        if !skip_hardlink {
+                            // Use actual disk size only (do not fall back to asize for sparse/cloud files).
+                            let sz = cmeta.dsize;
+                            if let Some(slot) = entries.get_mut(self.norm_buf.as_str()) {
+                                *slot = Some(sz);
+                            } else {
+                                entries.insert(Box::from(self.norm_buf.as_str()), Some(sz));
+                            }
                         }
                     }
                     buf.truncate(prev);

@@ -1,6 +1,33 @@
 # Benchmark: Go vs. Rust vs. Python (`analyze-ncdu`)
 
-Measured with macOS `/usr/bin/time -l` (release binaries pre-built) on host `VietVu-Macbook` (`darwin/arm64`) against `data/VietVu-Macbook/disk_usage.json.zst`:
+## v2 (2026-11-20) — Fixed `dsize`, `hlnkc`/`ino` Hardlink Dedup & Directory Nodes
+
+Measured with macOS `/usr/bin/time -l` (release binaries pre-built) on host `VietVu-Macbook` (`darwin/arm64`) against `data/VietVu-Macbook/disk_usage.json.zst` (`snapshots/disk_usage_2026-11-19_165630.json.zst`):
+
+- **Snapshot**: 38.3 MiB `.json.zst` (281.3 MiB uncompressed JSON)
+- **Dataset**: 5,490,532 entries → 2,426,671 unique file paths (all 3 implementations produce identical counts and totals)
+- **Changes vs v1**:
+  - Use actual allocated `dsize` only (no fallback to `asize`, preventing sparse/cloud file inflation).
+  - Deduplicate hardlinks (`hlnkc` + `ino`) once across all 3 languages (matching `ncdu` and `disk_map.py`).
+  - Treat all JSON array nodes as directories (fixes empty directories being counted as files).
+
+| Implementation | Wall Time | User CPU | Sys CPU | Peak RSS | Peak Memory Footprint |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **Go (v2, slab + parallel)** (`./src-go/bin/analyze-ncdu`) | **3.64s** | 4.15s | 0.19s | **498.8 MiB** (0.49 GiB) | **497.8 MiB** (0.49 GiB) |
+| **Rust (v2, streaming)** (`./rs/target/release/analyze-ncdu`) | 4.85s | 4.20s | 0.25s | 604.9 MiB (0.59 GiB) | 605.0 MiB (0.59 GiB) |
+| **Python (v2)** (`uvx --with tqdm python analyze_ncdu_v2.py`) | 23.04s | 17.42s | 3.79s | 2,301.6 MiB (2.25 GiB) | N/A\* |
+
+### v2 Key Takeaways
+
+- **Go vs. Rust**: **1.33× faster** wall time (`3.64s` vs `4.85s`) and **17.5% less RAM** (`498.8 MiB` vs `604.9 MiB`).
+- **Go vs. Python**: **6.33× faster** wall time (`3.64s` vs `23.04s`) with **4.61× lower** Peak RSS (`498.8 MiB` vs `2,301.6 MiB`).
+- **Rust vs. Python**: **4.75× faster** wall time (`4.85s` vs `23.04s`) with **3.80× lower** Peak RSS (`604.9 MiB` vs `2,301.6 MiB`).
+
+---
+
+## v1 (2026-11-19) — Initial Go Port & Streaming Rust Optimization
+
+Measured with macOS `/usr/bin/time -l` (release binaries pre-built) on host `VietVu-Macbook` (`darwin/arm64`) against `data/VietVu-Macbook/disk_usage.json.zst` (`snapshots/disk_usage_2026-11-03_132850.json.zst`):
 
 - **Snapshot**: 33.3 MiB `.json.zst` (246.6 MiB uncompressed JSON)
 - **Dataset**: 4,860,815 entries → 2,326,093 unique paths

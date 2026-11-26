@@ -121,7 +121,7 @@ def read_snapshot_header(file_path: Path, max_bytes: int = 2048) -> Optional[str
                     return chunk.decode("utf-8", errors="ignore")
             except Exception:
                 proc = subprocess.Popen(
-                    ["zstd", "-dc", str(file_path)],
+                    ["zstd", "-dcf", str(file_path)],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                 )
@@ -153,7 +153,7 @@ def open_snapshot_file(file_path: Path):
             return io.TextIOWrapper(reader, encoding="utf-8")
         except ImportError:
             proc = subprocess.Popen(
-                ["zstd", "-dc", str(file_path)],
+                ["zstd", "-dcf", str(file_path)],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )
@@ -483,35 +483,35 @@ COPY (
 
     duck_proc = subprocess.Popen([duck_cmd, "-dark-mode", "-c", duck_sql], stdin=subprocess.PIPE)
 
-    def walk_stream(node: List, parent: str = "", depth: int = 1):
+    seen_inodes: Set[int] = set()
+
+    def walk_stream(node: List, parent: str = "", depth: int = 1) -> int:
         m = node[0]
         name = m.get("name", "")
-        cur = normalize_path(f"{parent}/{name}" if parent else f"/{name}")
+        raw_cur = f"{parent}/{name}" if parent else f"/{name}"
+        cur = normalize_path(raw_cur)
 
         # Skip virtual CloudStorage (Google Drive, iCloud, OneDrive) placeholders unless explicitly requested
         if not include_cloudstorage and is_excluded_path(cur):
-            return
+            return 0
 
-        dsize = m.get("dsize") or m.get("asize", 0)
-
-        row = {
-            "path": cur,
-            "name": name,
-            "size_bytes": dsize,
-            "is_dir": True,
-            "depth": depth,
-            "extension": "",
-            "category": get_category_tag(cur),
-        }
-        duck_proc.stdin.write(json.dumps(row).encode("utf-8") + b"\n")
+        # Use actual disk size (do not fall back to asize for sparse/cloud files)
+        total = m.get("dsize", 0)
 
         for child in node[1:]:
             if isinstance(child, dict):
                 cname = child.get("name", "")
-                cp = normalize_path(f"{cur}/{cname}")
+                cp = normalize_path(f"{raw_cur}/{cname}")
                 if not include_cloudstorage and is_excluded_path(cp):
                     continue
-                cdsize = child.get("dsize") or child.get("asize", 0)
+                if child.get("hlnkc"):
+                    ino = child.get("ino")
+                    if ino:
+                        if ino in seen_inodes:
+                            continue
+                        seen_inodes.add(ino)
+                cdsize = child.get("dsize", 0)
+                total += cdsize
                 idx = cname.rfind(".")
                 ext = cname[idx:].lower() if idx > 0 and idx < len(cname) - 1 else ""
                 row_f = {
@@ -525,7 +525,23 @@ COPY (
                 }
                 duck_proc.stdin.write(json.dumps(row_f).encode("utf-8") + b"\n")
             elif isinstance(child, list):
-                walk_stream(child, cur, depth + 1)
+                child_raw = f"{raw_cur}/{child[0].get('name', '')}"
+                child_total = walk_stream(child, raw_cur, depth + 1)
+                # Avoid double-counting APFS Data volume into /System when legacy snapshots scanned it
+                if not child_raw.lstrip("/").startswith("System/Volumes/Data"):
+                    total += child_total
+
+        row = {
+            "path": cur,
+            "name": name,
+            "size_bytes": total,
+            "is_dir": True,
+            "depth": depth,
+            "extension": "",
+            "category": get_category_tag(cur),
+        }
+        duck_proc.stdin.write(json.dumps(row).encode("utf-8") + b"\n")
+        return total
 
     walk_stream(tree)
     duck_proc.stdin.close()
@@ -1058,6 +1074,7 @@ def load_snapshot(
 
     file_sizes: Dict[str, int] = {}
     dir_sizes: Dict[str, int] = {}
+    seen_inodes: Set[int] = set()
 
     def walk(node: List, parent: str = "") -> int:
         if not node:
@@ -1069,18 +1086,27 @@ def load_snapshot(
         if not include_cloudstorage and is_excluded_path(n_cur):
             return 0
 
-        tot = 0
+        tot = metadata.get("dsize", 0)
         for child in node[1:]:
             if isinstance(child, dict):
                 cname = child.get("name", "")
                 cp = normalize_path(f"{cur}/{cname}")
                 if not include_cloudstorage and is_excluded_path(cp):
                     continue
-                dsize = child.get("dsize") or child.get("asize", 0)
+                if child.get("hlnkc"):
+                    ino = child.get("ino")
+                    if ino:
+                        if ino in seen_inodes:
+                            continue
+                        seen_inodes.add(ino)
+                dsize = child.get("dsize", 0)
                 file_sizes[cp] = dsize
                 tot += dsize
             elif isinstance(child, list):
-                tot += walk(child, cur)
+                child_raw = f"{cur}/{child[0].get('name', '')}"
+                child_tot = walk(child, cur)
+                if not child_raw.lstrip("/").startswith("System/Volumes/Data"):
+                    tot += child_tot
 
         dir_sizes[n_cur] = tot
         return tot
